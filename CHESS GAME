@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chess vs AI (Levels)</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #222;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { margin: 10px; }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    grid-template-rows: repeat(8, 60px);
+    border: 4px solid #555;
+  }
+  .cell {
+    width: 60px;
+    height: 60px;
+    font-size: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+  }
+  .white { background: #f0d9b5; color: #000; }
+  .black { background: #b58863; color: #000; }
+  .selected { outline: 3px solid red; }
+
+  .dot::after {
+    content: "•";
+    font-size: 30px;
+    color: lime;
+    position: absolute;
+  }
+
+  #status { margin-top: 10px; font-size: 18px; }
+</style>
+</head>
+<body>
+
+<h1>Chess vs AI</h1>
+
+<label>
+  Difficulty:
+  <select id="level">
+    <option value="beginner">Beginner</option>
+    <option value="easy">Easy</option>
+    <option value="medium">Medium</option>
+    <option value="hard">Hard</option>
+    <option value="veryhard">Very Hard</option>
+  </select>
+</label>
+
+<div id="board"></div>
+<div id="status">Your turn (White)</div>
+
+<script>
+const PIECES = {
+  "r": "♜", "n": "♞", "b": "♝", "q": "♛", "k": "♚", "p": "♟",
+  "R": "♖", "N": "♘", "B": "♗", "Q": "♕", "K": "♔", "P": "♙"
+};
+
+const boardEl = document.getElementById("board");
+const statusEl = document.getElementById("status");
+const levelSelect = document.getElementById("level");
+
+let board = [
+  ["r","n","b","q","k","b","n","r"],
+  ["p","p","p","p","p","p","p","p"],
+  ["","","","","","","",""],
+  ["","","","","","","",""],
+  ["","","","","","","",""],
+  ["","","","","","","",""],
+  ["P","P","P","P","P","P","P","P"],
+  ["R","N","B","Q","K","B","N","R"]
+];
+
+let selected = null;
+let turn = "white";
+let legalDots = [];
+
+function isWhite(p){ return p && p === p.toUpperCase(); }
+function isBlack(p){ return p && p === p.toLowerCase(); }
+
+function drawBoard() {
+  boardEl.innerHTML = "";
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell " + ((r + c) % 2 === 0 ? "white" : "black");
+
+      if (selected && selected.r === r && selected.c === c) {
+        cell.classList.add("selected");
+      }
+
+      if (legalDots.some(m => m.r === r && m.c === c)) {
+        cell.classList.add("dot");
+      }
+
+      const piece = board[r][c];
+      cell.textContent = piece ? PIECES[piece] : "";
+      cell.onclick = () => onCellClick(r, c);
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+function onCellClick(r, c) {
+  if (turn !== "white") return;
+
+  const piece = board[r][c];
+
+  if (!selected) {
+    if (piece && isWhite(piece)) {
+      selected = { r, c };
+      legalDots = getLegalMovesFrom(r, c, "white");
+      drawBoard();
+    }
+  } else {
+    if (legalDots.some(m => m.r === r && m.c === c)) {
+      makeMove({ from: selected, to: { r, c } });
+      selected = null;
+      legalDots = [];
+      drawBoard();
+      if (checkGameOver()) return;
+      turn = "black";
+      statusEl.textContent = "AI thinking...";
+      setTimeout(aiMove, 300);
+    } else {
+      selected = null;
+      legalDots = [];
+      drawBoard();
+    }
+  }
+}
+
+function makeMove(move) {
+  const p = board[move.from.r][move.from.c];
+  board[move.to.r][move.to.c] = p;
+  board[move.from.r][move.from.c] = "";
+
+  if (p === "P" && move.to.r === 0) board[move.to.r][move.to.c] = "Q";
+  if (p === "p" && move.to.r === 7) board[move.to.r][move.to.c] = "q";
+}
+
+function checkGameOver() {
+  let whiteKing = false;
+  let blackKing = false;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (board[r][c] === "K") whiteKing = true;
+      if (board[r][c] === "k") blackKing = true;
+    }
+  }
+  if (!whiteKing) {
+    statusEl.textContent = "Black wins! White King is dead.";
+    turn = "over";
+    return true;
+  }
+  if (!blackKing) {
+    statusEl.textContent = "You win! Black King is dead.";
+    turn = "over";
+    return true;
+  }
+  return false;
+}
+
+// ===== Rules =====
+function isLegalMove(move, side) {
+  const fr = move.from.r, fc = move.from.c;
+  const tr = move.to.r, tc = move.to.c;
+  const p = board[fr][fc];
+  const target = board[tr][tc];
+
+  if (!p) return false;
+  if (side === "white" && !isWhite(p)) return false;
+  if (side === "black" && !isBlack(p)) return false;
+
+  if (target) {
+    if (side === "white" && isWhite(target)) return false;
+    if (side === "black" && isBlack(target)) return false;
+  }
+
+  const dr = tr - fr;
+  const dc = tc - fc;
+  const adr = Math.abs(dr);
+  const adc = Math.abs(dc);
+
+  switch (p.toLowerCase()) {
+    case "p": {
+      const dir = isWhite(p) ? -1 : 1;
+      if (dc === 0 && dr === dir && !target) return true;
+      if (adc === 1 && dr === dir && target) return true;
+      return false;
+    }
+    case "r":
+      if (dr === 0 || dc === 0) return clearPath(fr, fc, tr, tc);
+      return false;
+    case "n":
+      return (adr === 2 && adc === 1) || (adr === 1 && adc === 2);
+    case "b":
+      if (adr === adc) return clearPath(fr, fc, tr, tc);
+      return false;
+    case "q":
+      if (dr === 0 || dc === 0 || adr === adc) return clearPath(fr, fc, tr, tc);
+      return false;
+    case "k":
+      return adr <= 1 && adc <= 1;
+  }
+  return false;
+}
+
+function clearPath(fr, fc, tr, tc) {
+  const sr = Math.sign(tr - fr);
+  const sc = Math.sign(tc - fc);
+  let r = fr + sr;
+  let c = fc + sc;
+  while (r !== tr || c !== tc) {
+    if (board[r][c] !== "") return false;
+    r += sr;
+    c += sc;
+  }
+  return true;
+}
+
+function getLegalMovesFrom(r, c, side) {
+  let moves = [];
+  for (let tr = 0; tr < 8; tr++) {
+    for (let tc = 0; tc < 8; tc++) {
+      const m = { from: { r, c }, to: { r: tr, c: tc } };
+      if (isLegalMove(m, side)) moves.push({ r: tr, c: tc });
+    }
+  }
+  return moves;
+}
+
+function getAllMoves(side) {
+  let moves = [];
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (p && ((side === "white" && isWhite(p)) || (side === "black" && isBlack(p)))) {
+        for (let tr = 0; tr < 8; tr++) {
+          for (let tc = 0; tc < 8; tc++) {
+            const m = { from: { r, c }, to: { r: tr, c: tc } };
+            if (isLegalMove(m, side)) moves.push(m);
+          }
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+// ===== Simple Evaluation =====
+const values = { p:1, n:3, b:3, r:5, q:9, k:1000 };
+
+function evaluateBoard() {
+  let score = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p) continue;
+      const v = values[p.toLowerCase()];
+      if (isBlack(p)) score += v;
+      else score -= v;
+    }
+  }
+  return score;
+}
+
+// ===== Minimax =====
+function minimax(depth, maximizing) {
+  if (depth === 0) return evaluateBoard();
+
+  const side = maximizing ? "black" : "white";
+  const moves = getAllMoves(side);
+
+  if (maximizing) {
+    let best = -Infinity;
+    for (let m of moves) {
+      const backup = board[m.to.r][m.to.c];
+      makeMove(m);
+      const val = minimax(depth - 1, false);
+      board[m.from.r][m.from.c] = board[m.to.r][m.to.c];
+      board[m.to.r][m.to.c] = backup;
+      best = Math.max(best, val);
+    }
+    return best;
+  } else {
+    let best = Infinity;
+    for (let m of moves) {
+      const backup = board[m.to.r][m.to.c];
+      makeMove(m);
+      const val = minimax(depth - 1, true);
+      board[m.from.r][m.from.c] = board[m.to.r][m.to.c];
+      board[m.to.r][m.to.c] = backup;
+      best = Math.min(best, val);
+    }
+    return best;
+  }
+}
+
+// ===== AI Move with Levels =====
+function aiMove() {
+  if (turn !== "black") return;
+
+  const level = levelSelect.value;
+  let moves = getAllMoves("black");
+
+  if (moves.length === 0) return;
+
+  let chosen;
+
+  if (level === "beginner") {
+    chosen = moves[Math.floor(Math.random() * moves.length)];
+  }
+  else if (level === "easy") {
+    let captures = moves.filter(m => board[m.to.r][m.to.c] !== "");
+    chosen = (captures.length ? captures : moves)[Math.floor(Math.random() * (captures.length ? captures.length : moves.length))];
+  }
+  else {
+    let depth = (level === "medium") ? 1 : (level === "hard") ? 2 : 3;
+    let bestScore = -Infinity;
+    for (let m of moves) {
+      const backup = board[m.to.r][m.to.c];
+      makeMove(m);
+      const score = minimax(depth, false);
+      board[m.from.r][m.from.c] = board[m.to.r][m.to.c];
+      board[m.to.r][m.to.c] = backup;
+
+      if (score > bestScore) {
+        bestScore = score;
+        chosen = m;
+      }
+    }
+  }
+
+  makeMove(chosen);
+  drawBoard();
+  if (checkGameOver()) return;
+  turn = "white";
+  statusEl.textContent = "Your turn (White)";
+}
+
+drawBoard();
+</script>
+
+</body>
+</html>
